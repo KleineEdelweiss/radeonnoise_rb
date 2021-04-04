@@ -31,6 +31,46 @@ module RadeonNoise
       # is empty, it will just be an empty hash
       .collect { |card| card.reduce Hash.new, :update }
       # We only want AMDGPU cards
-      .select { |card| card['driver'] == "amdgpu"}
+      .select { |card| card['driver'] == "amdgpu" }
+      # Convert each into a card object
+      .each { |card| @@cards.push(RadeonCard.new(card)) }
+      
+      # Return the cards
+      self.all
+  end
+  
+  # Return all the cards
+  def self.all() @@cards end
+  
+  # Holds data associated with each
+  # Radeon card and provides access to
+  # its fans and settings.
+  class RadeonCard
+    # Store the current settings for the 
+    # graphics card:
+    # # detail is the sysfs hardware object data
+    # # sclk is the processor clock
+    # # mclk is the memory clock
+    # # pwm is whether fans are manual (true) or auto (false)
+    # # fan_curve is a list of values for the fan speeds
+    # # by temp.
+    attr_reader :config
+    
+    # Constructor
+    def initialize(hw)
+      @config = {
+        "detail" => hw,
+        "sclk" => [],
+        "mclk" => [],
+        "pwm" => false,
+        "fan_curve" => {}
+      }
+      update
+    end
+    
+    # Update the card values
+    def update
+      
+    end
   end
 end
