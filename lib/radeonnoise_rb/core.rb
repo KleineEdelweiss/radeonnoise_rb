@@ -54,23 +54,67 @@ module RadeonNoise
     # # pwm is whether fans are manual (true) or auto (false)
     # # fan_curve is a list of values for the fan speeds
     # # by temp.
-    attr_reader :config
+    attr_reader :config, :cache
     
     # Constructor
     def initialize(hw)
       @config = {
         "detail" => hw,
-        "sclk" => [],
-        "mclk" => [],
-        "pwm" => false,
-        "fan_curve" => {}
+        "sclk" => [], # Processor clock
+        "mclk" => [], # Video memory clock
+        
+        # Regexes for various settings
+        # Use these to detect the numbers for each
+        "pwm" => /pwm\d*$/, # Fan power settings (0-255)
+        "freqs" => /freq\d*_label/, # GPU frequencies
+        "voltages" => /in\d*_label/, # Voltage inputs
+        "temps" => /temp\d*_label/, # Temperatures
+        "fans" => /fan\d*_input/, # List of available fans
+        
+        # Fan curve settings
+        "fan_curve" => {},
       }
+      
+      d = "#{RadeonNoise::BASEDIR}/#{@config['detail']['dir']}"
+      @cache = {
+        'dir' => d,
+        'vram_total' => File.read("#{d}/device/mem_info_vram_total"),
+        'vbios' => File.read("#{d}/device/vbios_version"),
+      }
+      @cache.update({'fans' => fans})
       update
+    end
+    
+    # Stat the current cached data
+    def stat
+      @cache
     end
     
     # Update the card values
     def update
-      
+      d = @cache['dir']
+      @cache.update(udevice)
+    end
+    
+    # Update core device stats
+    def udevice
+      d = @cache['dir']
+      {
+        'level' => File.read("#{d}/device/power_dpm_force_performance_level"),
+        'sclk' => File.read("#{d}/device/pp_dpm_sclk"),
+        'mclk' => File.read("#{d}/device/pp_dpm_mclk"),
+        'pcie' => File.read("#{d}/device/pp_dpm_pcie"),
+        'busy_proc' => File.read("#{d}/device/gpu_busy_percent"),
+        'busy_mem' => File.read("#{d}/device/mem_busy_percent"),
+      }
+    end
+    
+    # Read fan data
+    def fans
+      d = @cache['dir']
+      {
+        
+      }
     end
   end
 end
