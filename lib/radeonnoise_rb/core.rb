@@ -67,6 +67,7 @@ module RadeonNoise
         # Use these to detect the numbers for each
         "pwm" => /pwm\d*$/, # Fan power settings (0-255)
         "freqs" => /freq\d*_label/, # GPU frequencies
+        "power" => /power\d*_average/, # GPU processor power consumption
         "voltages" => /in\d*_label/, # Voltage inputs
         "temps" => /temp\d*_label/, # Temperatures
         "fans" => /fan\d*_input/, # List of available fans
@@ -109,8 +110,51 @@ module RadeonNoise
       }
     end
     
+    # PWM (fan power)
+    def pwm
+      d = @cache['dir']
+      {
+        
+      }
+    end
+    
     # Read fan data
     def fans
+      d = @cache['dir']
+      {
+        
+      }
+    end
+    
+    # Voltage
+    def volts
+      d = @cache['dir']
+      {
+        
+      }
+    end
+    
+    # Power consumption
+    def power
+      d = @cache['dir']
+      Dir.glob("#{d}/*")
+        .reject { |i| !i.match?(@config['power']) }
+        .collect { |i| nil }
+      {
+        
+      }
+    end
+    
+    # Frequencies
+    def freqs
+      d = @cache['dir']
+      {
+        
+      }
+    end
+    
+    # Temperatures
+    def temps
       d = @cache['dir']
       {
         
