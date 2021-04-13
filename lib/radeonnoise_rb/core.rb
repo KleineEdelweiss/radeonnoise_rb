@@ -7,9 +7,10 @@ module RadeonNoise
   # Base directory for hwmon
   BASEDIR = "/sys/class/hwmon"
   
-  # Holds the list of cards
+  # List of cards
   @@cards = []
   
+  # Initialize the RadeonNoise controls
   def self.init
     # Iterate over hwmon subdirectories
     Dir.glob("#{BASEDIR}/*")
@@ -33,7 +34,7 @@ module RadeonNoise
       # We only want AMDGPU cards
       .select { |card| card['driver'] == "amdgpu" }
       # Convert each into a card object
-      .each { |card| @@cards.push(RadeonCard.new(card)) }
+      .each { |card| @@cards.push(AMDGPUCard.new(card)) }
       
       # Return the cards
       self.all
@@ -41,11 +42,14 @@ module RadeonNoise
   
   # Return all the cards
   def self.all() @@cards end
+    
+  # Return whether the user is root
+  def self.root() `id -u`.strip.to_i == 0 end
   
   # Holds data associated with each
-  # Radeon card and provides access to
+  # AMDGPU card and provides access to
   # its fans and settings.
-  class RadeonCard
+  class AMDGPUCard
     # Store the current settings for the 
     # graphics card:
     # # detail is the sysfs hardware object data
@@ -72,6 +76,10 @@ module RadeonNoise
         "temps" => /temp\d*_label/, # Temperatures
         "fans" => /fan\d*_input/, # List of available fans
         
+        # Long filenames that should be stored
+        # for quick access
+        'dpm_level' => "device/power_dpm_force_performance_level",
+        
         # Fan curve settings
         "fan_curve" => {},
       }
@@ -94,7 +102,7 @@ module RadeonNoise
     # Update the card values
     def update
       d = @cache['dir']
-      @cache.update(udevice)
+      @cache.update(udevice).update(freqs).update(pcie)
     end
     
     # Update core device stats
@@ -102,9 +110,6 @@ module RadeonNoise
       d = @cache['dir']
       {
         'level' => File.read("#{d}/device/power_dpm_force_performance_level"),
-        'sclk' => File.read("#{d}/device/pp_dpm_sclk"),
-        'mclk' => File.read("#{d}/device/pp_dpm_mclk"),
-        'pcie' => File.read("#{d}/device/pp_dpm_pcie"),
         'busy_proc' => File.read("#{d}/device/gpu_busy_percent"),
         'busy_mem' => File.read("#{d}/device/mem_busy_percent"),
       }
@@ -146,10 +151,22 @@ module RadeonNoise
     end
     
     # Frequencies
+    # These are handled by only the sclk
     def freqs
       d = @cache['dir']
       {
-        
+        'sclk' => active_s(File.read("#{d}/device/pp_dpm_sclk"))
+          .collect { |item| item.to_f },
+        'mclk' => active_s(File.read("#{d}/device/pp_dpm_mclk"))
+          .collect { |item| item.to_f },
+      }
+    end
+    
+    # PCIe speed
+    def pcie
+      {
+        'pcie' => active_s(File.read("#{@cache['dir']}/device/pp_dpm_pcie"))
+          .collect { |item| item.split(",").last.gsub(/\W/, '') },
       }
     end
     
@@ -159,6 +176,28 @@ module RadeonNoise
       {
         
       }
+    end
+    
+    # Split multi-line read-ins
+    # and then select the active option
+    # only (for settings)
+    def active_s(data)
+      data.split(/\n/)
+        .reject { |item| !item.strip.match?(/\*$/) }
+        .collect { |item| item.split(":").last.strip }
+    end
+    
+    # Change performance type (manual / auto)
+    # /device/power_dpm_force_performance_level
+    # "manual" / "auto"
+    def force_perf(setting)
+      if !RadeonNoise.root then
+        puts "You need superuser/root permissions to use setters in this module"
+      elsif ["manual", "auto"].include?(setting) then
+        File.write("#{@cache['dir']}/#{@config['dpm_level']}", setting, mode: "r+")
+      else
+        puts "DPM force setting can only be 'manual' or 'auto'"
+      end
     end
   end
 end

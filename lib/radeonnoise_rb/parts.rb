@@ -74,5 +74,15 @@ module Component
         @current[k]["current"] = File.read("#{@path}/#{k}_input").to_f / 1000
       end
     end
+    
+    # Voltage detection
+    class Voltage < AbstractComponent
+      # This needs to be a de-abstracted component,
+      # because there are 2 possible voltage sensors,
+      # and not all cards will have them.
+      # 
+      # They are identified by in0_ and in1_
+      # in the main directory of the card
+    end
   end
 end
