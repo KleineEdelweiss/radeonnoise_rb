@@ -33,13 +33,13 @@ module Component
     def index(rg, path)
       Dir.glob(path)
         .reject { |item| !item.match?(rg) }
-        .collect { |item| item.split("/").last.gsub(/\D/, '') }
+        .collect { |item| item.split("/").last.gsub(/\D/, '').to_sym }
     end
     
     # Generate prefixes
     def pfx(rg, arr)
-      pfx = rg.source.gsub(/\\.*$/, '')
-      arr.collect { |item| "#{pfx}#{item}" }
+      pf = rg.source.gsub(/\\.*$/, '')
+      arr.collect { |item| "#{pf}#{item}".to_sym }
     end
     
     # Update the local data
@@ -59,7 +59,7 @@ module Component
     # Permanent values are crit, crit_hyst, and label
     def update
       # Create a card index for each prefix
-      @prefixes.each { |pref| @current["#{pref}"] = {} }
+      @prefixes.each { |pref| @current[pref] = {} }
       
       # Fill in all the data, only fill the permanent ones
       # on the first load.
@@ -68,10 +68,10 @@ module Component
       # all other values should be converted to a float and
       # divided by 1000, to change back into degrees Celsius
       @current.each do |k,v|
-        @current[k]["critical"] ||= File.read("#{@path}/#{k}_crit").to_f / 1000
-        @current[k]["hysteresis"] ||= File.read("#{@path}/#{k}_crit_hyst").to_f / 1000
-        @current[k]["label"] ||= File.read("#{@path}/#{k}_label").strip
-        @current[k]["current"] = File.read("#{@path}/#{k}_input").to_f / 1000
+        @current[k][:critical] ||= File.read("#{@path}/#{k}_crit").to_f / 1000
+        @current[k][:hysteresis] ||= File.read("#{@path}/#{k}_crit_hyst").to_f / 1000
+        @current[k][:label] ||= File.read("#{@path}/#{k}_label").strip
+        @current[k][:current] = File.read("#{@path}/#{k}_input").to_f / 1000
       end
     end
   end
