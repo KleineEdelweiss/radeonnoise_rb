@@ -67,8 +67,10 @@ module RadeonNoise
     # # by temp.
     attr_reader :config, :cache
     
+    PROTECTLVL = [:no_prot, :min_prot, :low_prot, :med_prot, :high_prot, :max_prot]
+    
     # Constructor
-    def initialize(hw, protection=:max)
+    def initialize(hw)
       # Initialize the card's config
       @config = {
         detail: hw,
@@ -94,7 +96,7 @@ module RadeonNoise
         fan_curve: {},
         
         # Allow unsafe operations
-        protection: protection,
+        protection: :max_prot,
       }
       
       # Initialize the card's stat cache
@@ -115,8 +117,9 @@ module RadeonNoise
     def update
       d = @cache[:dir]
       @cache.update(udevice)
-        .update(freqs)
         .update({slot: pcie})
+        .update(pwm)
+        .update(freqs)
         .update(volts)
         .update({fans: fans})
     end # End abstract update function
@@ -135,9 +138,25 @@ module RadeonNoise
     def pwm
       d = @cache[:dir]
       {
-        
+        pwm_control: pwmtype(File.read("#{d}/pwm1_enable").to_i),
+        pwm_max: File.read("#{d}/pwm1_max").to_i,
+        pwm_current: File.read("#{d}/pwm1").to_i,
       }
     end # End PWM
+    
+    # PWM control type
+    def pwmtype(val)
+      case val
+      when 0
+        "none"
+      when 1
+        "manual"
+      when 2
+        "automatic"
+      else
+        "error -- should never reach this"
+      end
+    end # End PWM type checker
     
     # Read fan data
     def fans
@@ -212,19 +231,6 @@ module RadeonNoise
         .collect { |item| item.split(":").last.strip }
     end # End abstract active setting reader
     
-    # Change performance type (manual / auto)
-    # /device/power_dpm_force_performance_level
-    # "manual" / "auto"
-    def set_dpm(setting)
-      if RadeonNoise.root then
-        if [:manual, :auto].include?(setting) then
-          File.write("#{@cache[:dir]}/#{@config[:dpm_level]}", setting, mode: "r+")
-        else
-          puts "DPM force setting can only be 'manual' or 'auto'"
-        end
-      end
-    end # End dpm setter
-    
     # Warn the user about unsafe operations
     def unsafe_warning(fn)
       sep = "++++++++++++++++++++"
@@ -236,11 +242,23 @@ module RadeonNoise
         "incorrectly. During erroneous usage, data loss/corruption, due to a system",
         "crash might be considered 'optimistic'.",
         sep,
-      ].each { |line| puts line }
+        ].each { |line| puts line }
       false
     end # End unsafe warning
     
     # Set the level of unsafe protection
+    def set_protection(val)
+      if RadeonNoise.root then
+        case
+        when PROTECTLVL.include?(val)
+          @config[:protection] = val
+        else
+          puts "#{val} is not a valid protection setting"
+          puts "Valid options are: #{PROTECTLVL}"
+          puts "No change"
+        end
+      end
+    end # End setter for protection level
     
     # Change the power cap on the card -- microWatts
     def set_pcap(uwatts, force=false)
@@ -259,5 +277,32 @@ module RadeonNoise
         end
       end
     end # End pcap setter
+    
+    # Change performance type (manual / auto)
+    # /device/power_dpm_force_performance_level
+    # "manual" / "auto"
+    def set_dpm(setting)
+      if RadeonNoise.root then
+        if [:manual, :auto].include?(setting) then
+          File.write("#{@cache[:dir]}/#{@config[:dpm_level]}", setting, mode: "r+")
+        else
+          puts "DPM force setting can only be 'manual' or 'auto'"
+        end
+      end
+    end # End dpm setter
+    
+    # Set the PWM type
+    def set_pwmt(val)
+      if RadeonNoise.root then
+        
+      end
+    end # End setter for PWM type
+    
+    # PWM speed controller
+    def set_pwm(val)
+      if RadeonNoise.root then
+        
+      end
+    end # End setter for PWM speed
   end # End class AMDGPUCard
 end # End module
