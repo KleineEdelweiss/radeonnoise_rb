@@ -115,7 +115,6 @@ module RadeonNoise
     
     # Update the card values
     def update
-      d = @cache[:dir]
       @cache.update(udevice)
         .update({slot: pcie})
         .update(pwm)
@@ -126,22 +125,20 @@ module RadeonNoise
     
     # Update core device stats
     def udevice
-      d = @cache[:dir]
-      {
+      lambda { |d| {
         level: File.read("#{d}/#{@config[:dpm_level]}").strip,
         busy_proc: File.read("#{d}/device/gpu_busy_percent").to_f,
         busy_mem: File.read("#{d}/device/mem_busy_percent").to_f,
-      }
+      }}.call(@cache[:dir])
     end # End core device data reader
     
     # PWM (fan power)
     def pwm
-      d = @cache[:dir]
-      {
+      lambda { |d| {
         pwm_control: pwmtype(File.read("#{d}/pwm1_enable").to_i),
         pwm_max: File.read("#{d}/pwm1_max").to_i,
         pwm_current: File.read("#{d}/pwm1").to_i,
-      }
+      }}.call(@cache[:dir])
     end # End PWM
     
     # PWM control type
@@ -174,34 +171,31 @@ module RadeonNoise
     # 
     # As such, will update with a value or empty.
     def volts
-      d, c, n = @cache[:dir], "in0_input", "in1_input"
-      {
+      lambda { |d,c,n| {
         volt_core: File.read("#{d}/#{c}").to_f,
         volt_northbridge: File.exist?("#{d}/#{n}") ? File.read("#{d}/#{n}").to_f : nil,
-      }
+      }}.call(@cache[:dir], "in0_input", "in1_input")
     end # End voltage reader
     
     # Power consumption
     # This is 
     def power
-      d = @cache[:dir]
-      {
+      lambda { |d| {
         'power_cap' => File.read("#{d}/#{@config['pcap']}").strip,
         'power_usage' => File.read("#{d}/power1_average").strip,
-      }
+      }}.call(@cache[:dir])
     end # End power reader
     
     # Frequencies
     # sclk is the processor clock
     # mclk is the VRAM clock
     def freqs
-      d = @cache[:dir]
-      {
+      lambda { |d| {
         freq_core: active_s(File.read("#{d}/device/pp_dpm_sclk"))
           .collect { |item| item.to_f },
         freq_vram: active_s(File.read("#{d}/device/pp_dpm_mclk"))
           .collect { |item| item.to_f },
-      }
+      }}.call(@cache[:dir])
     end # End frequency reader
     
     # PCIe speed
@@ -209,8 +203,8 @@ module RadeonNoise
     def pcie
       active_s(File.read("#{@cache[:dir]}/device/pp_dpm_pcie"))
       .collect do |item| 
-        tf, mul = item.split(",")
-        {multiplier: mul.gsub(/\W/, ''), tfspeed: tf}
+        item.split(",").then { |tf, mul|
+          {multiplier: mul.gsub(/\W/, ''), tfspeed: tf}}
       end
     end # End PCIe setting reader
     
@@ -233,29 +227,29 @@ module RadeonNoise
     
     # Warn the user about unsafe operations
     def unsafe_warning(fn)
-      sep = "++++++++++++++++++++"
-      [
-        sep,
-        "'#{fn}' is a potentially damaging operation, and you must supply",
-        "the parameter 'force=true' to allow it to complete. This function",
-        "may cause graphics card crashes or damage to components, if used",
-        "incorrectly. During erroneous usage, data loss/corruption, due to a system",
-        "crash might be considered 'optimistic'.",
-        sep,
-        ].each { |line| puts line }
+      ("+" * 20).then { |sep| <<~MSG
+          #{sep}\n'#{fn}' is a potentially damaging operation, and you must supply
+          the parameter 'force=true' to allow it to complete. This function
+          may cause graphics card crashes or damage to components, if used
+          incorrectly. During erroneous usage, data loss/corruption, due to a system
+          crash might be considered 'optimistic'.\n#{sep}
+        MSG
+        }.then { |msg| puts msg }
       false
     end # End unsafe warning
     
     # Set the level of unsafe protection
     def set_protection(val)
       if RadeonNoise.root then
-        case
-        when PROTECTLVL.include?(val)
+        if PROTECTLVL.include?(val) then
           @config[:protection] = val
         else
-          puts "#{val} is not a valid protection setting"
-          puts "Valid options are: #{PROTECTLVL}"
-          puts "No change"
+          ("+" * 20).then { |sep| <<~ERR
+            #{sep}\n'#{val}' is not a valid protection setting
+            Valid options are: #{PROTECTLVL}
+            No change\n#{sep}
+          ERR
+            }.then { |e| puts e }
         end
       end
     end # End setter for protection level
@@ -268,12 +262,11 @@ module RadeonNoise
       else
         # Make sure user is root
         if RadeonNoise.root then
-          w = uwatts.to_i
-          #puts "The value to be written will be: #{[w, @cache['power_max']].min.abs}"
           # Writes the minimum value, as the minimum is either below the maximum
           # power cap or the maximum power cap itself. Absolute value
           # is applied, so that a negative cannot be entered
-          File.write("#{@cache[:dir]}/#{@config[:pcap]}", [w, @cache[:power_max]].min.abs, mode: "r+")
+          uwatts.to_i.then { |w|
+            File.write("#{@cache[:dir]}/#{@config[:pcap]}", [w, @cache[:power_max]].min.abs, mode: "r+")}
         end
       end
     end # End pcap setter
