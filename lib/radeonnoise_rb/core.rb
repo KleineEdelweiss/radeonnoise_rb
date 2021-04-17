@@ -213,7 +213,7 @@ module RadeonNoise
       active_s(File.read("#{@cache[:dir]}/device/pp_dpm_pcie"))
       .collect do |item| 
         item.split(",").then { |tf, mul|
-          {multiplier: mul.gsub(/\W/, ''), tfspeed: tf}}
+          {multiplier: mul.gsub(/\W/, ''), tfspeed: tf} }
       end
     end # End PCIe setting reader
     
@@ -310,15 +310,32 @@ module RadeonNoise
               File.write("#{@cache[:dir]}/pwm1_enable", data, mode: "r+") }
           else # If the pwmtype output is any kind of error message
             puts "#{v}"
-          end
-        }
+          end }
       end
     end # End setter for PWM type
     
     # PWM speed controller
-    def set_pwm(val)
+    # ONLY USABLE AS ROOT
+    # 
+    # Take either a string or integer and write it to the PWM
+    # speed file. The value must be less than :pwm_max, so before
+    # writing, take the min of the max and input values.
+    # 
+    # If the value is an int already, take the absolute value, to
+    # ensure only a positive (or zero) number is entered. If it is
+    # a string, match it to an int, automatically removing ANY non-digits
+    # (including negatives).
+    def set_pwm(input)
       if RadeonNoise.root then
-        
+        [@cache[:dir], @cache[:pwm_max]].then { |d, mx| 
+          if Integer === input then # If integer, write directly
+            File.write("#{d}/pwm1", [input.abs, mx].min, mode: "r+")
+          elsif String === input and input.match?(/^\d+$/) then
+            input.to_i.then { |data| # If string, convert to int
+              File.write("#{d}/pwm1", [data, mx].min, mode: "r+") }
+          else # Otherwise, error
+            puts "#{input} is not valid. Please enter a positive integer up to #{mx}"
+          end }
       end
     end # End setter for PWM speed
   end # End class AMDGPUCard
