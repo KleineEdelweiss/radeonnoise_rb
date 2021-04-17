@@ -68,6 +68,7 @@ module RadeonNoise
     attr_reader :config, :cache
     
     PROTECTLVL = [:no_prot, :min_prot, :low_prot, :med_prot, :high_prot, :max_prot]
+    PWMLVL = {0 => :none, 1 => :manual, 2 => :auto}
     
     # Constructor
     def initialize(hw)
@@ -100,13 +101,12 @@ module RadeonNoise
       }
       
       # Initialize the card's stat cache
-      d = "#{RadeonNoise::BASEDIR}/#{@config[:detail][:dir]}"
-      @cache = {
+      @cache = "#{RadeonNoise::BASEDIR}/#{@config[:detail][:dir]}".then { |d| {
         dir: d,
         power_max: File.read("#{d}/power1_cap_max").to_i,
         vram_total: File.read("#{d}/device/mem_info_vram_total").to_f,
         vbios: File.read("#{d}/device/vbios_version").strip,
-      }
+      }}
       update
     end # End constructor
     
@@ -125,42 +125,50 @@ module RadeonNoise
     
     # Update core device stats
     def udevice
-      lambda { |d| {
+      @cache[:dir].then { |d| {
         level: File.read("#{d}/#{@config[:dpm_level]}").strip,
         busy_proc: File.read("#{d}/device/gpu_busy_percent").to_f,
         busy_mem: File.read("#{d}/device/mem_busy_percent").to_f,
-      }}.call(@cache[:dir])
+      }}
     end # End core device data reader
     
     # PWM (fan power)
     def pwm
-      lambda { |d| {
+      @cache[:dir].then { |d| {
         pwm_control: pwmtype(File.read("#{d}/pwm1_enable").to_i),
         pwm_max: File.read("#{d}/pwm1_max").to_i,
         pwm_current: File.read("#{d}/pwm1").to_i,
-      }}.call(@cache[:dir])
+      }}
     end # End PWM
     
     # PWM control type
+    # Accepts: [Integer, String, Symbol]
+    # 
+    # If String, convert to lowercase w/o whitespace, then
+    # check if it's an Integer or Symbol, and recurse.
+    # 
+    # If Integer, check if in PWMLVL.
+    # If Symbol, check if in inverse hash of PWMLVL.
+    # Return `nil`, if not present -- up to user how to handle.
+    # If anything else, return error message.
     def pwmtype(val)
-      case val
-      when 0
-        "none"
-      when 1
-        "manual"
-      when 2
-        "automatic"
-      else
-        "error -- should never reach this"
+      case
+      when val.instance_of?(String) # Try to recursively check on conversion
+        val.downcase.strip.then { |v| v.match?(/^\d+$/) ? pwmtype(v.to_i) : pwmtype(v.to_sym) }
+      when val.instance_of?(Integer) # Check the constant directly
+        PWMLVL[val]
+      when val.instance_of?(Symbol) # Invert constant, check
+        PWMLVL.invert[val]
+      else # Wrong class of input
+        "ERROR: wrong arg type (#{val.class}) for `pwmtype`. Accepts: [Integer, String, Symbol]"
       end
     end # End PWM type checker
     
     # Read fan data
     def fans
-      d = @cache[:dir]
-      {
+      @cache[:dir].then { |d| {
         
-      }
+      }}
     end # End fans
     
     # Voltage
@@ -171,31 +179,31 @@ module RadeonNoise
     # 
     # As such, will update with a value or empty.
     def volts
-      lambda { |d,c,n| {
+      [@cache[:dir], "in0_input", "in1_input"].then { |d,c,n| {
         volt_core: File.read("#{d}/#{c}").to_f,
         volt_northbridge: File.exist?("#{d}/#{n}") ? File.read("#{d}/#{n}").to_f : nil,
-      }}.call(@cache[:dir], "in0_input", "in1_input")
+      }}
     end # End voltage reader
     
     # Power consumption
     # This is 
     def power
-      lambda { |d| {
+      @cache[:dir].then { |d| {
         'power_cap' => File.read("#{d}/#{@config['pcap']}").strip,
         'power_usage' => File.read("#{d}/power1_average").strip,
-      }}.call(@cache[:dir])
+      }}
     end # End power reader
     
     # Frequencies
     # sclk is the processor clock
     # mclk is the VRAM clock
     def freqs
-      lambda { |d| {
+      @cache[:dir].then { |d| {
         freq_core: active_s(File.read("#{d}/device/pp_dpm_sclk"))
           .collect { |item| item.to_f },
         freq_vram: active_s(File.read("#{d}/device/pp_dpm_mclk"))
           .collect { |item| item.to_f },
-      }}.call(@cache[:dir])
+      }}
     end # End frequency reader
     
     # PCIe speed
@@ -210,10 +218,9 @@ module RadeonNoise
     
     # Temperatures
     def temps
-      d = @cache[:dir]
-      {
+      @cache[:dir].then { |d| {
         
-      }
+      }}
     end # End temps
     
     # Split multi-line read-ins
