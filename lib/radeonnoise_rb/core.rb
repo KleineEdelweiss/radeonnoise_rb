@@ -69,6 +69,7 @@ module RadeonNoise
     
     PROTECTLVL = [:no_prot, :min_prot, :low_prot, :med_prot, :high_prot, :max_prot]
     PWMLVL = {0 => :none, 1 => :manual, 2 => :auto}
+    PWMERR = "ERROR: accepted PWM type values are #{PWMLVL.values} or #{PWMLVL.invert.values}"
     
     # Constructor
     def initialize(hw)
@@ -153,12 +154,12 @@ module RadeonNoise
     # If anything else, return error message.
     def pwmtype(val)
       case
-      when val.instance_of?(String) # Try to recursively check on conversion
+      when String === val # Try to recursively check on conversion
         val.downcase.strip.then { |v| v.match?(/^\d+$/) ? pwmtype(v.to_i) : pwmtype(v.to_sym) }
-      when val.instance_of?(Integer) # Check the constant directly
-        PWMLVL[val]
-      when val.instance_of?(Symbol) # Invert constant, check
-        PWMLVL.invert[val]
+      when Integer === val # Check the constant directly
+        PWMLVL[val] || PWMERR
+      when Symbol === val # Invert constant, check
+        PWMLVL.invert[val] || PWMERR
       else # Wrong class of input
         "ERROR: wrong arg type (#{val.class}) for `pwmtype`. Accepts: [Integer, String, Symbol]"
       end
@@ -292,9 +293,25 @@ module RadeonNoise
     end # End dpm setter
     
     # Set the PWM type
+    # ONLY USABLE AS ROOT
+    # 
+    # Takes a user-entered value to choose the PWM mode
+    # setting -- no control, manual control, or automatic control.
+    # 
+    # Use `pwmtype` to check validity. If invalid, just print an error.
+    # Otherwise, if the value is returned as a symbol, pass it back to
+    # produce and integer to write to the file. Otherwise, write the
+    # returned integer directly
     def set_pwmt(val)
       if RadeonNoise.root then
-        
+        pwmtype(val).then { |v| # If the pwmtype output is valid
+          if Integer === v or Symbol === v then
+            (Integer === v ? v : pwmtype(v)).then { |data| # Only use Integers
+              File.write("#{@cache[:dir]}/pwm1_enable", data, mode: "r+") }
+          else # If the pwmtype output is any kind of error message
+            puts "#{v}"
+          end
+        }
       end
     end # End setter for PWM type
     
