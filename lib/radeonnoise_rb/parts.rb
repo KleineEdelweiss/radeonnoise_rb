@@ -23,9 +23,13 @@ module Component
     # Use the path (should end with 'hwmon[number]/*')
     # to glob all the files by the object type's regex, rg
     def initialize(rg, path)
+      # Initialize the object variables
       @current, @prefixes, @path = {}, pfx(rg, index(rg, path)), path.gsub("/*", "")
+      
+      # Create a card index for each prefix
+      @prefixes.each { |pref| @current[pref] = {} }
       update
-    end
+    end # End constructor
     
     # Attach regex components to
     # item indices, so they can be used
@@ -34,20 +38,20 @@ module Component
       Dir.glob(path)
         .reject { |item| !item.match?(rg) }
         .collect { |item| item.split("/").last.gsub(/\D/, '').to_sym }
-    end
+    end # End index
     
     # Generate prefixes
     def pfx(rg, arr)
-      pf = rg.source.gsub(/\\.*$/, '')
-      arr.collect { |item| "#{pf}#{item}".to_sym }
-    end
+      rg.source.gsub(/\\.*$/, '').then { |pf|
+        arr.collect { |item| "#{pf}#{item}".to_sym }}
+    end # End prefix
     
     # Update the local data
     # Set the values that don't change, permanently
     def update
       puts "method 'update' is not implemented for #{self.class}, yet"
-    end
-  end
+    end # End update
+  end # End AbstractComponent class
   
   # Temp loader class
   class Temp < AbstractComponent
@@ -58,9 +62,6 @@ module Component
     # -crit_hyst (critical hysteresis temp)
     # Permanent values are crit, crit_hyst, and label
     def update
-      # Create a card index for each prefix
-      @prefixes.each { |pref| @current[pref] = {} }
-      
       # Fill in all the data, only fill the permanent ones
       # on the first load.
       # 
@@ -72,7 +73,12 @@ module Component
         @current[k][:hysteresis] ||= File.read("#{@path}/#{k}_crit_hyst").to_f / 1000
         @current[k][:label] ||= File.read("#{@path}/#{k}_label").strip
         @current[k][:current] = File.read("#{@path}/#{k}_input").to_f / 1000
-      end
-    end
+      end # End update method
+    end # End Temp class
+    
+    # Fan loader class
+    class Fan < AbstractComponent
+      
+    end # End Fan class
   end
 end

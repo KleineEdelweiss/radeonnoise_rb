@@ -1,5 +1,8 @@
 # lib/radeonnoise_rb/core.rb
 
+# Local requires
+require_relative "./parts.rb"
+
 # This module will control the
 # basic operation of a RadeonNoise
 # application and configuration details.
@@ -81,12 +84,12 @@ module RadeonNoise
         
         # Regexes for various settings
         # Use these to detect the numbers for each
-        pwm: /pwm\d*$/, # Fan power settings (0-255)
-        freqs: /freq\d*_label/, # GPU frequencies
-        power: /power\d*_average/, # GPU processor power consumption
-        voltages: /in\d*_label/, # Voltage inputs
-        temps: /temp\d*_label/, # Temperatures
-        fans: /fan\d*_input/, # List of available fans
+        rg_pwm: /pwm\d*$/, # Fan power settings (0-255)
+        rg_freqs: /freq\d*_label/, # GPU frequencies
+        rg_power: /power\d*_average/, # GPU processor power consumption
+        rg_voltages: /in\d*_label/, # Voltage inputs
+        rg_temps: /temp\d*_label/, # Temperatures
+        rg_fans: /fan\d*_input/, # List of available fans
         
         # Quick access to some files
         # Manual/Auto clocking of processor
@@ -102,26 +105,38 @@ module RadeonNoise
       }
       
       # Initialize the card's stat cache
-      @cache = "#{RadeonNoise::BASEDIR}/#{@config[:detail][:dir]}".then { |d| {
+      "#{RadeonNoise::BASEDIR}/#{@config[:detail][:dir]}".then { |d| @cache = {
         dir: d,
-        power_max: File.read("#{d}/power1_cap_max").to_i,
         vram_total: File.read("#{d}/device/mem_info_vram_total").to_f,
         vbios: File.read("#{d}/device/vbios_version").strip,
       }}
+      @cache.update(temps).update(fans)
       update
     end # End constructor
     
     # Stat the current cached data
     def stat() @cache end
     
+    ####################################
+    ####################################
+    # +++ BASIC READERS SECTION
+    # +++ SECTION CONTAINS READ AND
+    # +++ UPDATE OPERATION METHODS
+    # +++ FOR SIMPLE READERS
+    ####################################
+    ####################################
+    
     # Update the card values
     def update
       @cache.update(udevice)
-        .update({slot: pcie})
-        .update(pwm)
-        .update(freqs)
-        .update(volts)
-        .update({fans: fans})
+        .update({slot: upcie})
+        .update(upwm)
+        .update(ufreqs)
+        .update(uvolts)
+        .update(upower)
+        .then { utemps }
+        .then { ufans }
+        .then { @cache }
     end # End abstract update function
     
     # Update core device stats
@@ -134,13 +149,116 @@ module RadeonNoise
     end # End core device data reader
     
     # PWM (fan power)
-    def pwm
+    def upwm
       @cache[:dir].then { |d| {
         pwm_control: pwmtype(File.read("#{d}/pwm1_enable").to_i),
         pwm_max: File.read("#{d}/pwm1_max").to_i,
         pwm_current: File.read("#{d}/pwm1").to_i,
       }}
     end # End PWM
+    
+    # Voltage
+    # The inputs were re-classified from a previous commit:
+    # they have a specific meaning and are not actually
+    # variable. in0 is the graphics processor, while in1
+    # is the northbridge, if a sensor is present.
+    # 
+    # As such, will update with a value or empty.
+    def uvolts
+      [@cache[:dir], "in0_input", "in1_input"].then { |d,c,n| {
+        volt_core: File.read("#{d}/#{c}").to_f,
+        volt_northbridge: File.exist?("#{d}/#{n}") ? File.read("#{d}/#{n}").to_f : nil,
+      }}
+    end # End voltage reader
+    
+    # Power consumption
+    # This monitors the current and maximum possible
+    # power usage of the card. 'pcap', however, can be lower
+    # than the card's physical limit, if set as such
+    def upower
+      @cache[:dir].then { |d| {
+        power_cap: File.read("#{d}/#{@config[:pcap]}").strip,
+        power_usage: File.read("#{d}/power1_average").strip,
+      }}
+    end # End power reader
+    
+    # Frequencies
+    # sclk is the processor clock
+    # mclk is the VRAM clock
+    def ufreqs
+      @cache[:dir].then { |d| {
+        freq_core: active_s(File.read("#{d}/device/pp_dpm_sclk"))
+          .collect { |item| item.to_f },
+        freq_vram: active_s(File.read("#{d}/device/pp_dpm_mclk"))
+          .collect { |item| item.to_f },
+      }}
+    end # End frequency reader
+    
+    # PCIe speed
+    # Although this is a 
+    def upcie
+      active_s(File.read("#{@cache[:dir]}/device/pp_dpm_pcie"))
+      .collect do |item| 
+        item.split(",").then { |tf, mul|
+          {multiplier: mul.gsub(/\W/, ''), tfspeed: tf} }
+      end
+    end # End PCIe setting reader
+    
+    ####################################
+    ####################################
+    # +++ COMPLEX ABSTRACT READERS SECTION
+    # +++ SECTION CONTAINS READ AND
+    # +++ UPDATE OPERATION METHODS
+    # +++ FOR VARIABLE READERS
+    ####################################
+    ####################################
+    
+    # Temperatures
+    def temps
+      [@config[:rg_temps], @cache[:dir]].then { |rg, d| 
+        {temps: Component::Temp.new(rg, "#{d}/*")} }
+    end # End temperatures
+    
+    # Update the temperatures
+    def utemps() @cache[:temps].update end
+    
+    # Read fan data
+    def fans
+      [@config[:rg_fans], @cache[:dir]].then { |rg, d| 
+        {fans: nil} }
+    end
+    
+    # Update the fan data
+    def ufans() end
+    
+    ####################################
+    ####################################
+    # +++ GENERAL HELPER FUNCTIONS
+    # +++ FOR SOME OF THE OTHER METHODS
+    ####################################
+    ####################################
+    
+    # Warn the user about unsafe operations
+    def unsafe_warning(fn)
+      ("+" * 20).then { |sep| <<~MSG
+        #{sep}\n'#{fn}' is a potentially damaging operation, and you must supply
+        the parameter 'force=true' to allow it to complete. This function
+        may cause graphics card crashes or damage to components, if used
+        incorrectly. During erroneous usage, data loss/corruption, due to a system
+        crash might be considered 'optimistic'.\n#{sep}
+        MSG
+        }.then { |msg| puts msg }
+      false
+    end # End unsafe warning
+    
+    # Split multi-line read-ins
+    # and then select the active option
+    # only (for settings)
+    def active_s(data)
+      data.split(/\n/)
+        .reject { |item| !item.strip.match?(/\*$/) }
+        .collect { |item| item.split(":").last.strip }
+    end # End abstract active setting reader
     
     # PWM control type
     # Accepts: [Integer, String, Symbol]
@@ -165,86 +283,12 @@ module RadeonNoise
       end
     end # End PWM type checker
     
-    # Read fan data
-    def fans
-      @cache[:dir].then { |d| {
-        
-      }}
-    end # End fans
-    
-    # Voltage
-    # The inputs were re-classified from a previous commit:
-    # they have a specific meaning and are not actually
-    # variable. in0 is the graphics processor, while in1
-    # is the northbridge, if a sensor is present.
-    # 
-    # As such, will update with a value or empty.
-    def volts
-      [@cache[:dir], "in0_input", "in1_input"].then { |d,c,n| {
-        volt_core: File.read("#{d}/#{c}").to_f,
-        volt_northbridge: File.exist?("#{d}/#{n}") ? File.read("#{d}/#{n}").to_f : nil,
-      }}
-    end # End voltage reader
-    
-    # Power consumption
-    # This is 
-    def power
-      @cache[:dir].then { |d| {
-        'power_cap' => File.read("#{d}/#{@config['pcap']}").strip,
-        'power_usage' => File.read("#{d}/power1_average").strip,
-      }}
-    end # End power reader
-    
-    # Frequencies
-    # sclk is the processor clock
-    # mclk is the VRAM clock
-    def freqs
-      @cache[:dir].then { |d| {
-        freq_core: active_s(File.read("#{d}/device/pp_dpm_sclk"))
-          .collect { |item| item.to_f },
-        freq_vram: active_s(File.read("#{d}/device/pp_dpm_mclk"))
-          .collect { |item| item.to_f },
-      }}
-    end # End frequency reader
-    
-    # PCIe speed
-    # Although this is a 
-    def pcie
-      active_s(File.read("#{@cache[:dir]}/device/pp_dpm_pcie"))
-      .collect do |item| 
-        item.split(",").then { |tf, mul|
-          {multiplier: mul.gsub(/\W/, ''), tfspeed: tf} }
-      end
-    end # End PCIe setting reader
-    
-    # Temperatures
-    def temps
-      @cache[:dir].then { |d| {
-        
-      }}
-    end # End temps
-    
-    # Split multi-line read-ins
-    # and then select the active option
-    # only (for settings)
-    def active_s(data)
-      data.split(/\n/)
-        .reject { |item| !item.strip.match?(/\*$/) }
-        .collect { |item| item.split(":").last.strip }
-    end # End abstract active setting reader
-    
-    # Warn the user about unsafe operations
-    def unsafe_warning(fn)
-      ("+" * 20).then { |sep| <<~MSG
-          #{sep}\n'#{fn}' is a potentially damaging operation, and you must supply
-          the parameter 'force=true' to allow it to complete. This function
-          may cause graphics card crashes or damage to components, if used
-          incorrectly. During erroneous usage, data loss/corruption, due to a system
-          crash might be considered 'optimistic'.\n#{sep}
-        MSG
-        }.then { |msg| puts msg }
-      false
-    end # End unsafe warning
+    ####################################
+    ####################################
+    # +++ SETTER FUNCTIONS: THESE NEED
+    # +++ TO BE RUN WITH ROOT PRIVILEGES
+    ####################################
+    ####################################
     
     # Set the level of unsafe protection
     def set_protection(val)
