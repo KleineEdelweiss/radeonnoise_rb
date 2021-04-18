@@ -1,8 +1,8 @@
 # frozen_string_literal: true
-require_relative "lib/radeonnoise_rb/version.rb"
+require_relative "lib/radeonnoise/version.rb"
 
 Gem::Specification.new do |spec|
-  spec.name = "radeonnoise_rb"
+  spec.name = "radeonnoise"
   spec.version = RadeonNoise::VERSION
   spec.summary = "Linux AMDGPU controller in Ruby"
   spec.description = <<~DESC

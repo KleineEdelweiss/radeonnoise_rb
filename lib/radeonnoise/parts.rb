@@ -1,4 +1,4 @@
-# lib/radeonnoise_rb/parts.rb
+# lib/radeonnoise/parts.rb
 
 # This module will handle several part objects
 # and their abstract representations as components
@@ -73,12 +73,45 @@ module Component
         @current[k][:hysteresis] ||= File.read("#{@path}/#{k}_crit_hyst").to_f / 1000
         @current[k][:label] ||= File.read("#{@path}/#{k}_label").strip
         @current[k][:current] = File.read("#{@path}/#{k}_input").to_f / 1000
-      end # End update method
-    end # End Temp class
+      end 
+    end # End update method
+  end # End Temp class
     
-    # Fan loader class
-    class Fan < AbstractComponent
-      
-    end # End Fan class
-  end
-end
+  # Fan loader class
+  class Fan < AbstractComponent
+    # Read in the enabled state, max state, and target state.
+    # 
+    # Although _target can be read in and manipulated, it is pointlessly
+    # risky to manipulate it, when the PWM controller in the core module
+    # already does this.
+    # 
+    # Due to it being a mechanical RPM target, it will also
+    # CONSTANTLY need to readjust, rather than just keeping the pulse width
+    # setting the same and letting the motor do the lifting. Setting this
+    # forces the driver to take an active role in manipulating the speed, when
+    # it changes by even a small margin.
+    # 
+    ## Whether I will add this later or recommend users overload it themselves, ##
+    ## I am not yet sure. Unlike the power cap, this does not provide any real ##
+    ## benefit, and it can freeze up the driver, at least as tested on my system. ##
+    def update
+      @current.each do |k,v|
+        # If the value, when converted to an integer, is 1, it is enabled.
+        # If it is 1, the result should be true. `.zero?` returns true if 0,
+        # so invert it.
+        @current[k][:enabled] = !File.read("#{@path}/#{k}_enable").to_i.zero?
+        # The current speed of the fan
+        @current[k][:rpm_current] = File.read("#{@path}/#{k}_input").to_i
+        # As the below 2 values, _min and _max, cannot be changed, I have
+        # implemented them as such.
+        # 
+        # _min is probably locked by firmware or the card's BIOS. However,
+        # it is here, anyway. Even root cannot modify this.
+        @current[k][:rpm_min] ||= File.read("#{@path}/#{k}_min").to_i
+        # _max does not seem editable either, but unlike _min, it is
+        # definitely useful to know the card's max RPM.
+        @current[k][:rpm_max] ||= File.read("#{@path}/#{k}_max").to_i
+      end
+    end # End update
+  end # End Fan class
+end # End Component module

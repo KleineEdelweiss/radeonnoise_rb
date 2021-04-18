@@ -1,4 +1,4 @@
-# lib/radeonnoise_rb/curve.rb
+# lib/radeonnoise/curve.rb
 
 # This module will handle fan curve operations.
 # 

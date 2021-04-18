@@ -1,4 +1,4 @@
-# lib/radeonnoise_rb/core.rb
+# lib/radeonnoise/core.rb
 
 # Local requires
 require_relative "./parts.rb"
@@ -225,11 +225,11 @@ module RadeonNoise
     # Read fan data
     def fans
       [@config[:rg_fans], @cache[:dir]].then { |rg, d| 
-        {fans: nil} }
+        {fans: Component::Fan.new(rg, "#{d}/*")} }
     end
     
     # Update the fan data
-    def ufans() end
+    def ufans() @cache[:fans].update end
     
     ####################################
     ####################################
