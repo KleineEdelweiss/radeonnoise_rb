@@ -8,11 +8,11 @@ Unlike the Elixir version, this is going to be a pluggable module and is not int
 The name is a play on Raildex's "Radio Noise Project", with the Misaka clones.
 
 # TO-DO
-1) Link driver version, probably by host bus and ``lspci``
 1) Clean out unnecessary/unused code
 1) Add better documentation
 1) Add a fan curve configuration system
 1) Add a fan curve controller
+1) Possibly try to connect the driver's version data with an FFI library or similar.
 
 # INSTALLATION
 ```

@@ -11,10 +11,12 @@ module RadeonNoise
   BASEDIR = "/sys/class/hwmon"
   
   # List of cards
-  @cards = []
+  attr_reader :cards, :lspci
   
   # Initialize the RadeonNoise controls
   def self.init
+    @cards = []
+    @lspci = self.read_lspci
     # Iterate over hwmon subdirectories
     Dir.glob("#{BASEDIR}/*")
       # For each subdirectory, create an array
@@ -43,8 +45,37 @@ module RadeonNoise
       self.all
   end
   
+  # Read the lspci data
+  def self.read_lspci
+    # See if `lspci` is present on the system
+    present = (Dir.glob("/usr/bin/*") + Dir.glob("/sbin/*"))
+      .select { |x| x.strip.match? "lspci" } 
+      .then { |out| out.length > 0 }
+    if present then
+      # The output of this command directly fits for simple parsing
+      # of each system device. It will also likely be ported to the
+      # other project, which will become a dependency here.
+      `lspci -Dnnvvvkmm`.split(/^\s*$/).collect { |device|
+        self.split_device(device.strip) }
+    else
+      [{}]
+    end
+  end # End read of `lspci` data
+  
+  # Divide the lspci data into devices
+  # Each pair should only have a single split, because the
+  # first colon represents the key to use
+  def self.split_device(device)
+    device.split("\n").collect { |line|
+      line.split(/:\s*/, 2).then { |k,v| {k.downcase.strip.to_sym => v.strip } }
+    }.reduce :update
+  end # End device splitter
+
   # Return all the cards
   def self.all() @cards end
+    
+  # Return the PCI data
+  def self.pci() @lspci end
     
   # Return whether the user is root
   def self.root
@@ -110,7 +141,7 @@ module RadeonNoise
         vram_total: File.read("#{d}/device/mem_info_vram_total").to_f,
         vbios: File.read("#{d}/device/vbios_version").strip,
       }}
-      @cache.update(temps).update(fans)
+      @cache.update(temps).update(fans).update(subsystem)
       update
     end # End constructor
     
@@ -125,6 +156,19 @@ module RadeonNoise
     # +++ FOR SIMPLE READERS
     ####################################
     ####################################
+      
+    # Attach the `lspci` subsystem data
+    # Essentially, this is the most useful data that is
+    # really relevant from the command, at least for the
+    # purpose of this interface. I may add more, though.
+    def subsystem
+      # There should only be one of these per card, as they
+      # are matched by bus ID. As such, only the first is
+      # selected.
+      RadeonNoise.pci.reject { |item|
+        item[:slot] != @config[:detail][:pci_slot_name]}
+        .first.then { |item| {subsystem: item} }
+    end # End card type
     
     # Update the card values
     def update
